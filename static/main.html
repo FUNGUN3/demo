@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Простые задания</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <!-- 1. БЛОГ -->
+    <div class="block">
+        <h2>Блог</h2>
+        <div class="blog-header">
+            <div>
+                <button class="nav-btn active" data-page="home">Главная</button>
+                <button class="nav-btn" data-page="about">О себе</button>
+                <button class="nav-btn" data-page="contacts">Контакты</button>
+            </div>
+            <input type="text" id="search" placeholder="Поиск...">
+            <button id="themeBtn">Тема</button>
+        </div>
+        <div id="posts"></div>
+    </div>
+    
+    <!-- 2. ФОРМА РЕГИСТРАЦИИ -->
+    <div class="block">
+        <h2>Регистрация</h2>
+        <form id="registerForm">
+            <input type="text" name="name" placeholder="Имя" required><br>
+            <input type="email" name="email" id="email" placeholder="Email" required><br>
+            <input type="password" name="password" id="pass" placeholder="Пароль" required><br>
+            <input type="password" id="pass2" placeholder="Повторите пароль"><br>
+            <span id="passError" style="color: red; display: none;">Пароли не совпадают</span><br>
+            <input type="text" id="date" placeholder="ДД/ММ/ГГГГ" maxlength="10"><br>
+            <label><input type="radio" name="gender" value="male"> Муж</label>
+            <label><input type="radio" name="gender" value="female"> Жен</label><br>
+            <label><input type="checkbox" name="agree" required> Согласен</label><br>
+            <button type="submit">Зарегистрироваться</button>
+        </form>
+    </div>
+    
+    <!-- 3. ГАЛЕРЕЯ -->
+    <div class="block">
+        <h2>Галерея</h2>
+        <div class="gallery" id="gallery"></div>
+    </div>
+    
+    <!-- 4. СПИСОК ЗАДАЧ -->
+    <div class="block">
+        <h2>Список дел</h2>
+        <div class="todo-input-group">
+            <input type="text" id="todoInput" placeholder="Новая задача...">
+            
+            <button id="addTodo">Добавить</button>
+        </div>
+        <div class="todo-filters">
+            <button class="filter-btn active" data-filter="all">Все</button>
+            <button class="filter-btn" data-filter="active">Активные</button>
+            <button class="filter-btn" data-filter="completed">Выполненные</button>
+            <button id="sortBtn">Сортировка A-Z</button>
+        </div>
+        <ul id="todoList"></ul>
+        <div>Активных: <span id="activeCount">0</span></div>
+    </div>
+    
+    <!-- 5. КАЛЬКУЛЯТОР -->
+    <div class="block">
+        <h2>Калькулятор</h2>
+        <div class="calc-display" id="display">0</div>
+        <div class="calc-buttons" id="calcButtons"></div>
+    </div>
+    
+    <!-- Модальное окно -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <img id="modalImg" src="">
+            <button class="close-modal" onclick="closeModal()">X</button>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
