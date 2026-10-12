@@ -1,0 +1,932 @@
+# 📦 Полный гайд для демоэкзамена: вёрстка + PostgreSQL + FastAPI
+
+Ниже — единый файл со всем необходимым: список библиотек, шаблоны HTML/CSS, шаблоны PostgreSQL, шаблоны Python (FastAPI), команды запуска виртуального окружения и сервера. Всё максимально прокомментировано, чтобы ты мог адаптировать под любую другую тематику задания.
+
+---
+
+## 1. 📚 Список библиотек, которые нужно установить
+
+### Обязательные (базовые)
+```bash
+pip install fastapi
+pip install uvicorn[standard]
+pip install jinja2
+pip install python-multipart
+pip install psycopg2-binary
+pip install sqlalchemy
+pip install pydantic
+pip install email-validator
+pip install passlib[bcrypt]
+pip install python-dotenv
+```
+
+### Что за что отвечает
+| Библиотека | Назначение |
+|---|---|
+| **fastapi** | Веб-фреймворк (аналог Flask, но современнее) |
+| **uvicorn[standard]** | ASGI-сервер, на котором запускается FastAPI |
+| **jinja2** | Шаблонизатор HTML (как в Flask) |
+| **python-multipart** | Обработка форм (POST-запросы) |
+| **psycopg2-binary** | Драйвер для подключения к PostgreSQL |
+| **sqlalchemy** | ORM для работы с БД (можно и без неё, но удобнее) |
+| **pydantic** | Валидация данных (встроена в FastAPI) |
+| **email-validator** | Проверка email |
+| **passlib[bcrypt]** | Хеширование паролей |
+| **python-dotenv** | Загрузка переменных окружения из `.env` |
+
+### Для фронтенда (если нужен)
+- **Bootstrap 5** — подключается через CDN, скачивать не нужно
+- **jQuery** — необязательно, для валидации на клиенте
+
+---
+
+## 2. 🐍 Запуск виртуального окружения и сервера
+
+### Windows
+```bash
+# Создать виртуальное окружение
+python -m venv venv
+
+# Активировать
+venv\Scripts\activate
+
+# Установить зависимости
+pip install -r requirements.txt
+
+# Запустить сервер FastAPI с авторелоадом
+uvicorn main:app --reload
+```
+
+### Linux / macOS
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### `requirements.txt`
+```
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+psycopg2-binary
+sqlalchemy
+pydantic
+email-validator
+passlib[bcrypt]
+python-dotenv
+```
+
+### `.env` (файл с настройками)
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=demo_exam
+DB_USER=postgres
+DB_PASSWORD=postgres
+SECRET_KEY=supersecretkey_change_me
+```
+
+---
+
+## 3. 🗄️ Шаблон SQL для PostgreSQL
+
+```sql
+-- ============================================================
+-- ШАБЛОН БАЗЫ ДАННЫХ ДЛЯ ДЕМОЭКЗАМЕНА
+-- Тематика: сервис заявок на услуги
+-- Меняй названия таблиц/полей под свою предметную область
+-- ============================================================
+
+-- Удаление старых таблиц (для пересоздания)
+DROP TABLE IF EXISTS requests CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS services CASCADE;
+
+-- ------------------------------------------------------------
+-- Таблица пользователей
+-- Хранит учётные данные и личную информацию
+-- ------------------------------------------------------------
+CREATE TABLE users (
+    id            SERIAL PRIMARY KEY,                -- уникальный ID
+    login         VARCHAR(50) UNIQUE NOT NULL,       -- логин (уникальный)
+    password_hash VARCHAR(255) NOT NULL,             -- хеш пароля
+    full_name     VARCHAR(150) NOT NULL,             -- ФИО (кириллица + пробелы)
+    phone         VARCHAR(20) NOT NULL,              -- телефон +7(XXX)-XXX-XX-XX
+    email         VARCHAR(100) NOT NULL,             -- email
+    role          VARCHAR(20) DEFAULT 'user',        -- 'user' или 'admin'
+    created_at    TIMESTAMP DEFAULT NOW()            -- дата регистрации
+);
+
+-- ------------------------------------------------------------
+-- Справочник услуг (виды услуг для выпадающего списка)
+-- ------------------------------------------------------------
+CREATE TABLE services (
+    id    SERIAL PRIMARY KEY,
+    name  VARCHAR(100) NOT NULL UNIQUE               -- название услуги
+);
+
+-- Начальные услуги (можно менять под тематику)
+INSERT INTO services (name) VALUES
+    ('Доставка'),
+    ('Ремонт'),
+    ('Консультация'),
+    ('Установка'),
+    ('Иная услуга');
+
+-- ------------------------------------------------------------
+-- Таблица заявок
+-- Связана с пользователем (FK) и услугой (FK)
+-- ------------------------------------------------------------
+CREATE TABLE requests (
+    id              SERIAL PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service_id      INTEGER REFERENCES services(id),      -- может быть NULL, если "иная"
+    custom_service  TEXT,                                  -- описание своей услуги
+    address         VARCHAR(255) NOT NULL,                 -- адрес
+    phone           VARCHAR(20) NOT NULL,                  -- контактный телефон
+    desired_date    DATE NOT NULL,                         -- желаемая дата
+    desired_time    TIME NOT NULL,                         -- желаемое время
+    payment_type    VARCHAR(20) NOT NULL,                  -- 'cash' или 'card'
+    status          VARCHAR(20) DEFAULT 'новая',           -- новая / в работе / выполнено / отменено
+    cancel_reason   TEXT,                                  -- причина отмены
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+-- ------------------------------------------------------------
+-- Админ по умолчанию (логин: adminka, пароль: password)
+-- ВНИМАНИЕ: хеш ниже — это bcrypt от "password".
+-- Если будешь менять пароль — сгенерируй новый хеш через Python:
+-- from passlib.hash import bcrypt; print(bcrypt.hash("password"))
+-- ------------------------------------------------------------
+INSERT INTO users (login, password_hash, full_name, phone, email, role)
+VALUES (
+    'adminka',
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/Lewr8Z8p8hRcQ8h8u', -- bcrypt("password")
+    'Администратор Системы',
+    '+7(999)-000-00-00',
+    'admin@example.com',
+    'admin'
+);
+
+-- ------------------------------------------------------------
+-- Полезные запросы
+-- ------------------------------------------------------------
+-- Все заявки с ФИО и услугой:
+-- SELECT r.id, u.full_name, u.phone, s.name, r.address, r.desired_date, r.status
+-- FROM requests r
+-- JOIN users u ON u.id = r.user_id
+-- LEFT JOIN services s ON s.id = r.service_id
+-- ORDER BY r.created_at DESC;
+
+-- Сменить статус заявки:
+-- UPDATE requests SET status = 'в работе' WHERE id = 1;
+
+-- Отменить с причиной:
+-- UPDATE requests SET status = 'отменено', cancel_reason = 'Клиент не отвечает' WHERE id = 1;
+```
+
+---
+
+## 4. 🐍 Шаблон FastAPI (`main.py`) с комментариями
+
+```python
+# ============================================================
+# ШАБЛОН FastAPI-ПРИЛОЖЕНИЯ ДЛЯ ДЕМОЭКЗАМЕНА
+# Меняй модели/маршруты под свою тематику
+# ============================================================
+
+import os
+import re
+from datetime import date, time, datetime
+from typing import Optional
+
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import create_engine, Column, Integer, String, Text, Date, Time, ForeignKey, TIMESTAMP, func
+from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+from passlib.hash import bcrypt
+from dotenv import load_dotenv
+
+# ------------------------------------------------------------
+# 1. ЗАГРУЗКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+# ------------------------------------------------------------
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "demo_exam")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# ------------------------------------------------------------
+# 2. ПОДКЛЮЧЕНИЕ К БД (SQLAlchemy)
+# ------------------------------------------------------------
+engine = create_engine(DATABASE_URL, echo=False)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
+
+# ------------------------------------------------------------
+# 3. МОДЕЛИ (соответствуют таблицам в SQL)
+# ------------------------------------------------------------
+class User(Base):
+    __tablename__ = "users"
+    id            = Column(Integer, primary_key=True)
+    login         = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name     = Column(String(150), nullable=False)
+    phone         = Column(String(20), nullable=False)
+    email         = Column(String(100), nullable=False)
+    role          = Column(String(20), default="user")
+    created_at    = Column(TIMESTAMP, server_default=func.now())
+
+class Service(Base):
+    __tablename__ = "services"
+    id   = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False)
+
+class RequestModel(Base):
+    __tablename__ = "requests"
+    id             = Column(Integer, primary_key=True)
+    user_id        = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    service_id     = Column(Integer, ForeignKey("services.id"), nullable=True)
+    custom_service = Column(Text, nullable=True)
+    address        = Column(String(255), nullable=False)
+    phone          = Column(String(20), nullable=False)
+    desired_date   = Column(Date, nullable=False)
+    desired_time   = Column(Time, nullable=False)
+    payment_type   = Column(String(20), nullable=False)
+    status         = Column(String(20), default="новая")
+    cancel_reason  = Column(Text, nullable=True)
+    created_at     = Column(TIMESTAMP, server_default=func.now())
+
+    user    = relationship("User")
+    service = relationship("Service")
+
+# Создание таблиц, если их нет (обычно делается через SQL-скрипт, но пусть будет)
+Base.metadata.create_all(bind=engine)
+
+# ------------------------------------------------------------
+# 4. ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ
+# ------------------------------------------------------------
+app = FastAPI(title="Демоэкзамен")
+templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ------------------------------------------------------------
+# 5. ЗАВИСИМОСТЬ: получение сессии БД
+# ------------------------------------------------------------
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ------------------------------------------------------------
+# 6. ВАЛИДАТОРЫ (регулярки под задание)
+# ------------------------------------------------------------
+PHONE_RE = re.compile(r"^\+7\(\d{3}\)-\d{3}-\d{2}-\d{2}$")
+FIO_RE   = re.compile(r"^[А-Яа-яЁё\s]+$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def validate_registration(login, password, full_name, phone, email):
+    """Возвращает список ошибок (пустой = всё ок)."""
+    errors = []
+    if not login or len(login) < 3:
+        errors.append("Логин должен быть не менее 3 символов")
+    if not password or len(password) < 6:
+        errors.append("Пароль должен быть не менее 6 символов")
+    if not FIO_RE.match(full_name or ""):
+        errors.append("ФИО должно содержать только кириллицу и пробелы")
+    if not PHONE_RE.match(phone or ""):
+        errors.append("Телефон должен быть в формате +7(XXX)-XXX-XX-XX")
+    if not EMAIL_RE.match(email or ""):
+        errors.append("Некорректный email")
+    return errors
+
+# ------------------------------------------------------------
+# 7. ХЕЛПЕР: текущий пользователь из cookie (простая сессия)
+# ------------------------------------------------------------
+def get_current_user(request: Request, db: Session):
+    user_id = request.cookies.get("user_id")
+    if not user_id:
+        return None
+    return db.query(User).filter(User.id == int(user_id)).first()
+
+# ------------------------------------------------------------
+# 8. МАРШРУТЫ
+# ------------------------------------------------------------
+
+# ---------- Главная ----------
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+
+# ---------- Регистрация ----------
+@app.get("/register", response_class=HTMLResponse)
+def register_form(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request, "errors": []})
+
+@app.post("/register", response_class=HTMLResponse)
+def register(
+    request: Request,
+    login: str = Form(...),
+    password: str = Form(...),
+    full_name: str = Form(...),
+    phone: str = Form(...),
+    email: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    errors = validate_registration(login, password, full_name, phone, email)
+
+    # Проверка уникальности логина
+    if db.query(User).filter(User.login == login).first():
+        errors.append("Такой логин уже занят")
+
+    if errors:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "errors": errors, "form": {
+                "login": login, "full_name": full_name,
+                "phone": phone, "email": email
+            }},
+        )
+
+    user = User(
+        login=login,
+        password_hash=bcrypt.hash(password),
+        full_name=full_name,
+        phone=phone,
+        email=email,
+    )
+    db.add(user)
+    db.commit()
+    return RedirectResponse("/login", status_code=303)
+
+# ---------- Авторизация ----------
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+@app.post("/login", response_class=HTMLResponse)
+def login(
+    request: Request,
+    login: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.login == login).first()
+    if not user or not bcrypt.verify(password, user.password_hash):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверный логин или пароль"},
+        )
+
+    # Простая сессия через cookie
+    redirect = RedirectResponse("/", status_code=303)
+    redirect.set_cookie("user_id", str(user.id), httponly=True)
+    return redirect
+
+@app.get("/logout")
+def logout():
+    redirect = RedirectResponse("/", status_code=303)
+    redirect.delete_cookie("user_id")
+    return redirect
+
+# ---------- Создание заявки (история + форма) ----------
+@app.get("/requests", response_class=HTMLResponse)
+def requests_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    my_requests = (
+        db.query(RequestModel)
+        .filter(RequestModel.user_id == user.id)
+        .order_by(RequestModel.created_at.desc())
+        .all()
+    )
+    services = db.query(Service).all()
+    return templates.TemplateResponse(
+        "requests.html",
+        {"request": request, "user": user, "requests": my_requests, "services": services},
+    )
+
+@app.post("/requests")
+def create_request(
+    request: Request,
+    address: str = Form(...),
+    phone: str = Form(...),
+    desired_date: str = Form(...),
+    desired_time: str = Form(...),
+    service_id: Optional[str] = Form(None),
+    custom_service: Optional[str] = Form(None),
+    payment_type: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    # Валидация
+    errors = []
+    if not address.strip():
+        errors.append("Укажите адрес")
+    if not PHONE_RE.match(phone):
+        errors.append("Телефон в формате +7(XXX)-XXX-XX-XX")
+    if not service_id and not (custom_service and custom_service.strip()):
+        errors.append("Выберите услугу или опишите свою")
+    if payment_type not in ("cash", "card"):
+        errors.append("Выберите тип оплаты")
+
+    if errors:
+        services = db.query(Service).all()
+        my_requests = db.query(RequestModel).filter(RequestModel.user_id == user.id).all()
+        return templates.TemplateResponse(
+            "requests.html",
+            {"request": request, "user": user, "requests": my_requests,
+             "services": services, "errors": errors},
+        )
+
+    req = RequestModel(
+        user_id=user.id,
+        service_id=int(service_id) if service_id else None,
+        custom_service=custom_service if not service_id else None,
+        address=address,
+        phone=phone,
+        desired_date=date.fromisoformat(desired_date),
+        desired_time=time.fromisoformat(desired_time),
+        payment_type=payment_type,
+    )
+    db.add(req)
+    db.commit()
+    return RedirectResponse("/requests", status_code=303)
+
+# ---------- Панель администратора ----------
+@app.get("/admin", response_class=HTMLResponse)
+def admin_panel(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+
+    all_requests = (
+        db.query(RequestModel)
+        .order_by(RequestModel.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "admin.html",
+        {"request": request, "user": user, "requests": all_requests},
+    )
+
+@app.post("/admin/status")
+def admin_change_status(
+    request: Request,
+    request_id: int = Form(...),
+    new_status: str = Form(...),
+    cancel_reason: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(status_code=403)
+
+    req = db.query(RequestModel).filter(RequestModel.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404)
+
+    req.status = new_status
+    if new_status == "отменено":
+        req.cancel_reason = cancel_reason or "Причина не указана"
+    db.commit()
+    return RedirectResponse("/admin", status_code=303)
+```
+
+---
+
+## 5. 🌐 Шаблоны HTML (Jinja2)
+
+### `templates/base.html` — базовый шаблон
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Демоэкзамен{% endblock %}</title>
+    <!-- Bootstrap 5 через CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Навигация: показываем ссылки в зависимости от авторизации -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">Сервис заявок</a>
+            <div class="ms-auto">
+                {% if user %}
+                    <span class="text-white me-3">{{ user.full_name }}</span>
+                    {% if user.role == 'admin' %}
+                        <a href="/admin" class="btn btn-warning btn-sm">Админка</a>
+                    {% else %}
+                        <a href="/requests" class="btn btn-outline-light btn-sm">Мои заявки</a>
+                    {% endif %}
+                    <a href="/logout" class="btn btn-danger btn-sm">Выйти</a>
+                {% else %}
+                    <a href="/login" class="btn btn-outline-light btn-sm">Вход</a>
+                    <a href="/register" class="btn btn-primary btn-sm">Регистрация</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
+```
+
+### `templates/register.html` — форма регистрации
+```html
+{% extends "base.html" %}
+{% block title %}Регистрация{% endblock %}
+{% block content %}
+<h2>Регистрация</h2>
+
+<!-- Блок ошибок валидации -->
+{% if errors %}
+    <div class="alert alert-danger">
+        <ul class="mb-0">
+            {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
+<form method="post" action="/register" class="row g-3" novalidate>
+    <div class="col-md-6">
+        <label class="form-label">Логин</label>
+        <input type="text" name="login" class="form-control"
+               value="{{ form.login if form else '' }}" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Пароль (мин. 6 символов)</label>
+        <input type="password" name="password" class="form-control" minlength="6" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">ФИО (кириллица)</label>
+        <input type="text" name="full_name" class="form-control"
+               pattern="[А-Яа-яЁё\s]+"
+               value="{{ form.full_name if form else '' }}" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Телефон</label>
+        <!-- pattern строго под формат +7(XXX)-XXX-XX-XX -->
+        <input type="text" name="phone" class="form-control"
+               pattern="\+7\(\d{3}\)-\d{3}-\d{2}-\d{2}"
+               placeholder="+7(999)-123-45-67"
+               value="{{ form.phone if form else '' }}" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-control"
+               value="{{ form.email if form else '' }}" required>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+    </div>
+</form>
+{% endblock %}
+```
+
+### `templates/login.html` — форма входа
+```html
+{% extends "base.html" %}
+{% block title %}Вход{% endblock %}
+{% block content %}
+<h2>Авторизация</h2>
+
+{% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/login" class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label">Логин</label>
+        <input type="text" name="login" class="form-control" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Пароль</label>
+        <input type="password" name="password" class="form-control" required>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary">Войти</button>
+    </div>
+</form>
+{% endblock %}
+```
+
+### `templates/requests.html` — история заявок + форма создания
+```html
+{% extends "base.html" %}
+{% block title %}Мои заявки{% endblock %}
+{% block content %}
+<h2>Мои заявки</h2>
+
+{% if errors %}
+    <div class="alert alert-danger">
+        <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+{% endif %}
+
+<!-- История заявок -->
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Услуга</th><th>Адрес</th><th>Дата</th><th>Время</th>
+            <th>Оплата</th><th>Статус</th><th>Причина отмены</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in requests %}
+        <tr>
+            <td>{{ r.service.name if r.service else r.custom_service }}</td>
+            <td>{{ r.address }}</td>
+            <td>{{ r.desired_date }}</td>
+            <td>{{ r.desired_time }}</td>
+            <td>{{ 'Наличные' if r.payment_type == 'cash' else 'Карта' }}</td>
+            <td>{{ r.status }}</td>
+            <td>{{ r.cancel_reason or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center">Заявок пока нет</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<hr>
+<h3>Новая заявка</h3>
+<form method="post" action="/requests" class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label">Адрес</label>
+        <input type="text" name="address" class="form-control" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Телефон</label>
+        <input type="text" name="phone" class="form-control"
+               pattern="\+7\(\d{3}\)-\d{3}-\d{2}-\d{2}"
+               placeholder="+7(999)-123-45-67" required>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Дата</label>
+        <input type="date" name="desired_date" class="form-control" required>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Время</label>
+        <input type="time" name="desired_time" class="form-control" required>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Услуга</label>
+        <select name="service_id" id="serviceSelect" class="form-select">
+            <option value="">— выберите —</option>
+            {% for s in services %}
+                <option value="{{ s.id }}">{{ s.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-12">
+        <label class="form-label">
+            <input type="checkbox" id="otherServiceCheck"> Иная услуга
+        </label>
+        <!-- Поле появляется только если отмечен чекбокс -->
+        <input type="text" name="custom_service" id="customService"
+               class="form-control" placeholder="Опишите услугу" disabled>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Тип оплаты</label><br>
+        <label><input type="radio" name="payment_type" value="cash" required> Наличные</label>
+        <label class="ms-3"><input type="radio" name="payment_type" value="card"> Карта</label>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-success">Оставить заявку</button>
+    </div>
+</form>
+
+<script>
+// Показ/скрытие поля "Иная услуга"
+const check = document.getElementById('otherServiceCheck');
+const custom = document.getElementById('customService');
+const select = document.getElementById('serviceSelect');
+
+check.addEventListener('change', () => {
+    custom.disabled = !check.checked;
+    if (check.checked) {
+        select.value = '';        // сбрасываем выпадающий список
+        select.disabled = true;
+    } else {
+        select.disabled = false;
+        custom.value = '';
+    }
+});
+</script>
+{% endblock %}
+```
+
+### `templates/admin.html` — панель администратора
+```html
+{% extends "base.html" %}
+{% block title %}Админ-панель{% endblock %}
+{% block content %}
+<h2>Панель администратора</h2>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>ID</th><th>ФИО</th><th>Телефон</th><th>Услуга</th>
+            <th>Адрес</th><th>Дата/время</th><th>Оплата</th>
+            <th>Статус</th><th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in requests %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.user.full_name }}</td>
+            <td>{{ r.phone }}</td>
+            <td>{{ r.service.name if r.service else r.custom_service }}</td>
+            <td>{{ r.address }}</td>
+            <td>{{ r.desired_date }} {{ r.desired_time }}</td>
+            <td>{{ 'Наличные' if r.payment_type == 'cash' else 'Карта' }}</td>
+            <td>{{ r.status }}{% if r.cancel_reason %} ({{ r.cancel_reason }}){% endif %}</td>
+            <td>
+                <!-- Форма смены статуса -->
+                <form method="post" action="/admin/status" class="d-flex gap-1">
+                    <input type="hidden" name="request_id" value="{{ r.id }}">
+                    <select name="new_status" class="form-select form-select-sm">
+                        <option value="в работе">в работе</option>
+                        <option value="выполнено">выполнено</option>
+                        <option value="отменено">отменено</option>
+                    </select>
+                    <input type="text" name="cancel_reason" class="form-control form-control-sm"
+                           placeholder="Причина отмены">
+                    <button class="btn btn-sm btn-primary">OK</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+```
+
+---
+
+## 6. 🎨 Шаблон CSS (`static/style.css`)
+
+```css
+/* ============================================================
+   БАЗОВЫЙ ШАБЛОН СТИЛЕЙ
+   Меняй цвета/шрифты под свою тему
+   ============================================================ */
+
+/* --- Общие --- */
+body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background-color: #f5f7fa;
+    color: #212529;
+}
+
+h2, h3 {
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+/* --- Формы --- */
+form .form-label {
+    font-weight: 500;
+}
+
+input:invalid {
+    border-color: #dc3545;
+}
+
+input:valid {
+    border-color: #198754;
+}
+
+/* --- Таблицы --- */
+table.table {
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+table.table th {
+    background: #343a40;
+    color: #fff;
+}
+
+/* --- Кнопки --- */
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+}
+
+/* --- Карточки/контейнеры --- */
+.container {
+    max-width: 1100px;
+}
+
+/* --- Адаптив --- */
+@media (max-width: 768px) {
+    table.table {
+        font-size: 0.85rem;
+    }
+}
+```
+
+---
+
+## 7. 📁 Итоговая структура проекта
+
+```
+demo_exam/
+├── main.py
+├── requirements.txt
+├── .env
+├── database.sql
+├── static/
+│   └── style.css
+└── templates/
+    ├── base.html
+    ├── index.html
+    ├── register.html
+    ├── login.html
+    ├── requests.html
+    └── admin.html
+```
+
+### `templates/index.html` (простая главная)
+```html
+{% extends "base.html" %}
+{% block title %}Главная{% endblock %}
+{% block content %}
+<div class="text-center mt-5">
+    <h1>Сервис заявок на услуги</h1>
+    <p class="lead">Зарегистрируйтесь или войдите, чтобы оставить заявку.</p>
+    {% if not user %}
+        <a href="/register" class="btn btn-primary btn-lg">Регистрация</a>
+        <a href="/login" class="btn btn-outline-secondary btn-lg">Вход</a>
+    {% endif %}
+</div>
+{% endblock %}
+```
+
+---
+
+## 8. 🚀 Порядок запуска
+
+1. **Создать БД в PostgreSQL:**
+   ```bash
+   psql -U postgres -c "CREATE DATABASE demo_exam;"
+   psql -U postgres -d demo_exam -f database.sql
+   ```
+
+2. **Создать и активировать виртуальное окружение:**
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate          # Windows
+   source venv/bin/activate       # Linux/macOS
+   ```
+
+3. **Установить зависимости:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Запустить сервер:**
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+5. **Открыть в браузере:** `http://127.0.0.1:8000`
+
+---
+
+## 💡 Как адаптировать под другую тематику
+
+- **Модели** (`User`, `Service`, `RequestModel`) — переименуй поля под свою предметную область (например, `Book`, `Order`, `Ticket`).
+- **SQL-скрипт** — замени таблицы и связи, оставь структуру: справочник + основная таблица + пользователи.
+- **Валидаторы** — регулярки под конкретные форматы (ИНН, паспорт, артикул и т.д.).
+- **Ш
